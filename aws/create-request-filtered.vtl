@@ -1,0 +1,43 @@
+## Profanity Check - Reject bad words before saving
+#set($message = $ctx.args.message.toLowerCase())
+
+## English bad words
+#set($badWords = ["fuck", "shit", "ass", "bitch", "bastard", "dick", "cock", "pussy", "whore", "slut", "cunt", "damn", "crap", "asshole", "motherfucker", "nigger", "faggot"])
+
+## Hindi transliterated bad words  
+#set($hindiBadWords = ["bhenchod", "bhosdike", "madarchod", "chutiya", "gaand", "lauda", "lund", "bhadwa", "randi", "harami", "kamina", "gandu", "chod", "bsdk", "mc", "bc", "lavde", "behenchod", "madarjaat", "jhant", "tatte", "chut"])
+
+#set($hasBadWord = false)
+
+## Check English words
+#foreach($word in $badWords)
+  #if($message.contains($word))
+    #set($hasBadWord = true)
+  #end
+#end
+
+## Check Hindi words
+#foreach($word in $hindiBadWords)
+  #if($message.contains($word))
+    #set($hasBadWord = true)
+  #end
+#end
+
+## If bad word found, reject
+#if($hasBadWord)
+  $util.error("अच्छा लिखो 🙏 No bad words allowed!", "PROFANITY_DETECTED")
+#end
+
+## If clean, proceed with save
+{
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDBJson($util.autoId())
+  },
+  "attributeValues": {
+    "message": $util.dynamodb.toDynamoDBJson($ctx.args.message),
+    "createdAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601()),
+    "status": $util.dynamodb.toDynamoDBJson("approved")
+  }
+}

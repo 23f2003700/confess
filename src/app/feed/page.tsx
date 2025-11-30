@@ -4,30 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
-import { Amplify } from "aws-amplify";
-import { generateClient } from "aws-amplify/api";
-import awsConfig from "@/aws-config";
-import { listConfessions, onCreateConfession } from "@/graphql/operations";
 
-// Configure Amplify
-Amplify.configure({
-  API: {
-    GraphQL: {
-      endpoint: awsConfig.aws_appsync_graphqlEndpoint,
-      region: awsConfig.aws_appsync_region,
-      defaultAuthMode: 'apiKey',
-      apiKey: awsConfig.aws_appsync_apiKey,
-    }
-  }
-});
-
-const client = generateClient();
+// No AWS credentials here - all handled server-side
 
 interface Confession {
   id: string;
   message: string;
   createdAt: string;
-  status?: string;
 }
 
 function getTimeAgo(dateString: string): string {
@@ -50,15 +33,18 @@ export default function FeedPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch confessions from AppSync
+  // Fetch confessions from secure API route
   const fetchConfessions = useCallback(async () => {
     try {
-      const result = await client.graphql({
-        query: listConfessions,
-        variables: { limit: 50 }
-      }) as { data: { listConfessions: { items: Confession[] } } };
+      const response = await fetch('/api/confessions');
       
-      const items = result.data?.listConfessions?.items || [];
+      if (!response.ok) {
+        throw new Error('Failed to fetch');
+      }
+      
+      const data = await response.json();
+      const items = data.items || [];
+      
       // Sort by createdAt descending (newest first)
       const sorted = items.sort((a: Confession, b: Confession) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -74,39 +60,13 @@ export default function FeedPage() {
     }
   }, []);
 
-  // Subscribe to new confessions
+  // Initial fetch and polling for updates
   useEffect(() => {
     fetchConfessions();
-
-    // Set up real-time subscription
-    let subscription: { unsubscribe: () => void } | null = null;
     
-    try {
-      const sub = client.graphql({
-        query: onCreateConfession
-      });
-      
-      if ('subscribe' in sub) {
-        subscription = (sub as unknown as { subscribe: (handlers: { next: (data: { data: { onCreateConfession: Confession } }) => void; error: (err: Error) => void }) => { unsubscribe: () => void } }).subscribe({
-          next: ({ data }: { data: { onCreateConfession: Confession } }) => {
-            if (data?.onCreateConfession) {
-              setConfessions(prev => [data.onCreateConfession, ...prev]);
-            }
-          },
-          error: (err: Error) => {
-            console.error('Subscription error:', err);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('Failed to set up subscription:', err);
-    }
-
-    return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
-    };
+    // Poll for updates every 5 seconds (since we can't use WebSocket subscriptions through API route)
+    const interval = setInterval(fetchConfessions, 5000);
+    return () => clearInterval(interval);
   }, [fetchConfessions]);
 
   // Update timestamps every 30 seconds
@@ -116,12 +76,6 @@ export default function FeedPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  // Poll for updates every 10 seconds as backup
-  useEffect(() => {
-    const interval = setInterval(fetchConfessions, 10000);
-    return () => clearInterval(interval);
-  }, [fetchConfessions]);
 
   return (
     <div className="relative min-h-dvh w-full overflow-hidden bg-slate-950">

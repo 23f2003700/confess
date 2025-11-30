@@ -4,41 +4,8 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
-import { Amplify } from "aws-amplify";
-import { generateClient } from "aws-amplify/api";
-import awsConfig from "@/aws-config";
-import { createConfession } from "@/graphql/operations";
 
-// Configure Amplify
-Amplify.configure({
-  API: {
-    GraphQL: {
-      endpoint: awsConfig.aws_appsync_graphqlEndpoint,
-      region: awsConfig.aws_appsync_region,
-      defaultAuthMode: 'apiKey',
-      apiKey: awsConfig.aws_appsync_apiKey,
-    }
-  }
-});
-
-const client = generateClient();
-
-// Profanity filter - Hindi & English bad words
-const BAD_WORDS = [
-  // English
-  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'whore', 
-  'slut', 'cunt', 'damn', 'crap', 'wtf', 'stfu', 'asshole', 'motherfucker',
-  // Hindi transliterated
-  'bhenchod', 'bhosdike', 'madarchod', 'chutiya', 'gaand', 'lauda', 'lund', 
-  'bhadwa', 'randi', 'harami', 'kamina', 'bc', 'mc', 'bsdk',
-  // Hindi script
-  'चूतिया', 'भोसडी', 'मादरचोद', 'गांड', 'लौड़ा', 'रंडी', 'हरामी', 'बहनचोद'
-];
-
-function containsBadWords(text: string): boolean {
-  const lowerText = text.toLowerCase();
-  return BAD_WORDS.some(word => lowerText.includes(word.toLowerCase()));
-}
+// No AWS credentials or sensitive data here - all handled server-side
 
 export default function ConfessPage() {
   const [message, setMessage] = useState("");
@@ -47,38 +14,38 @@ export default function ConfessPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
 
-    // Client-side profanity check first
-    if (containsBadWords(message)) {
-      setNotification({ type: "error", text: "अच्छा लिखो 🙏 No bad words please!" });
-      setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
-      return;
-    }
-
     try {
-      // Send to AppSync backend
-      await client.graphql({
-        query: createConfession,
-        variables: { message: message.trim() }
+      // Send to our secure API route (server-side handles everything)
+      const response = await fetch('/api/confessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message.trim() }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.code === 'PROFANITY') {
+          setNotification({ type: "error", text: "अच्छा लिखो 🙏 No bad words please!" });
+        } else if (response.status === 429) {
+          setNotification({ type: "error", text: "Too fast! Wait a moment 🙏" });
+        } else {
+          setNotification({ type: "error", text: data.error || "Something went wrong. Try again!" });
+        }
+        setTimeout(() => setNotification(null), 4000);
+        return;
+      }
 
       setMessage("");
       setNotification({ type: "success", text: "Your confession has been shared! 💜" });
       setTimeout(() => setNotification(null), 3000);
-    } catch (error: unknown) {
-      console.error('Error creating confession:', error);
-      
-      // Check if it's a profanity error from backend
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('PROFANITY') || errorMessage.includes('अच्छा')) {
-        setNotification({ type: "error", text: "अच्छा लिखो 🙏 No bad words please!" });
-      } else {
-        setNotification({ type: "error", text: "Something went wrong. Try again!" });
-      }
+    } catch (error) {
+      console.error('Error:', error);
+      setNotification({ type: "error", text: "Connection error. Try again!" });
       setTimeout(() => setNotification(null), 4000);
     } finally {
       setIsSubmitting(false);
