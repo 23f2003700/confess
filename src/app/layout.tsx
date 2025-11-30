@@ -24,6 +24,22 @@ export const metadata: Metadata = {
   title: "Confess | Share Your Feelings Anonymously",
   description: "A safe space to share your thoughts and feelings anonymously. No names, no judgement, just pure expressions.",
   keywords: ["confess", "anonymous", "feelings", "share", "thoughts"],
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+  manifest: "/site.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Confess",
+  },
 };
 
 export default function RootLayout({
