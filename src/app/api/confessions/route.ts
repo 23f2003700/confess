@@ -4,8 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // These are SERVER-SIDE ONLY - never sent to browser
-const APPSYNC_ENDPOINT = process.env.APPSYNC_ENDPOINT!;
-const APPSYNC_API_KEY = process.env.APPSYNC_API_KEY!;
+// Fallback values for when env vars aren't loaded (should be set in Amplify)
+const APPSYNC_ENDPOINT = process.env.APPSYNC_ENDPOINT || 'https://ul6plhg4uvcorc63rup2ufdd3y.appsync-api.ap-south-1.amazonaws.com/graphql';
+const APPSYNC_API_KEY = process.env.APPSYNC_API_KEY || 'da2-npfcho2b5zgo7k7jguzhegbf4u';
 
 // Rate limiting map (in production, use Redis)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
