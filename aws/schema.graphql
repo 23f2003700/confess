@@ -1,0 +1,38 @@
+type Confession {
+  id: ID!
+  message: String!
+  createdAt: AWSDateTime!
+  status: String!
+}
+
+type ConfessionConnection {
+  items: [Confession!]!
+  nextToken: String
+}
+
+type CreateConfessionResponse {
+  success: Boolean!
+  confession: Confession
+  error: String
+  notification: String!
+}
+
+type Query {
+  listConfessions(limit: Int, nextToken: String): ConfessionConnection!
+  getConfession(id: ID!): Confession
+}
+
+type Mutation {
+  createConfession(message: String!): Confession
+}
+
+type Subscription {
+  onCreateConfession: Confession
+    @aws_subscribe(mutations: ["createConfession"])
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}

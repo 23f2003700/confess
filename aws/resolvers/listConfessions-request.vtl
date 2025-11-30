@@ -1,0 +1,16 @@
+{
+  "version": "2018-05-29",
+  "operation": "Query",
+  "index": "status-createdAt-index",
+  "query": {
+    "expression": "#status = :status",
+    "expressionNames": {
+      "#status": "status"
+    },
+    "expressionValues": {
+      ":status": { "S": "approved" }
+    }
+  },
+  "scanIndexForward": false,
+  "limit": $util.defaultIfNull($ctx.args.limit, 50)
+}

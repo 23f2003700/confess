@@ -4,11 +4,30 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
+import { Amplify } from "aws-amplify";
+import { generateClient } from "aws-amplify/api";
+import awsConfig from "@/aws-config";
+import { listConfessions, onCreateConfession } from "@/graphql/operations";
+
+// Configure Amplify
+Amplify.configure({
+  API: {
+    GraphQL: {
+      endpoint: awsConfig.aws_appsync_graphqlEndpoint,
+      region: awsConfig.aws_appsync_region,
+      defaultAuthMode: 'apiKey',
+      apiKey: awsConfig.aws_appsync_apiKey,
+    }
+  }
+});
+
+const client = generateClient();
 
 interface Confession {
   id: string;
   message: string;
   createdAt: string;
+  status?: string;
 }
 
 function getTimeAgo(dateString: string): string {
@@ -26,40 +45,69 @@ function getTimeAgo(dateString: string): string {
 }
 
 export default function FeedPage() {
-  // Start with empty array - only real confessions will appear here
   const [confessions, setConfessions] = useState<Confession[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // TODO: Replace with AWS AppSync real-time subscription
-  // This will connect to DynamoDB via AppSync for real-time updates
-  const connectToRealTime = useCallback(() => {
-    // Simulating connection establishment
-    setTimeout(() => {
+  // Fetch confessions from AppSync
+  const fetchConfessions = useCallback(async () => {
+    try {
+      const result = await client.graphql({
+        query: listConfessions,
+        variables: { limit: 50 }
+      }) as { data: { listConfessions: { items: Confession[] } } };
+      
+      const items = result.data?.listConfessions?.items || [];
+      // Sort by createdAt descending (newest first)
+      const sorted = items.sort((a: Confession, b: Confession) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setConfessions(sorted);
       setIsConnected(true);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching confessions:', err);
+      setError('Failed to load confessions');
+    } finally {
       setIsLoading(false);
-    }, 1500);
-
-    // TODO: AppSync subscription code will go here:
-    // const subscription = API.graphql(graphqlOperation(onCreateConfession))
-    //   .subscribe({
-    //     next: (data) => {
-    //       const newConfession = data.value.data.onCreateConfession;
-    //       setConfessions(prev => [newConfession, ...prev]);
-    //     }
-    //   });
+    }
   }, []);
 
+  // Subscribe to new confessions
   useEffect(() => {
-    connectToRealTime();
+    fetchConfessions();
 
-    // TODO: Fetch existing confessions from DynamoDB
-    // const fetchConfessions = async () => {
-    //   const result = await API.graphql(graphqlOperation(listConfessions));
-    //   setConfessions(result.data.listConfessions.items);
-    // };
-    // fetchConfessions();
-  }, [connectToRealTime]);
+    // Set up real-time subscription
+    let subscription: { unsubscribe: () => void } | null = null;
+    
+    try {
+      const sub = client.graphql({
+        query: onCreateConfession
+      });
+      
+      if ('subscribe' in sub) {
+        subscription = (sub as unknown as { subscribe: (handlers: { next: (data: { data: { onCreateConfession: Confession } }) => void; error: (err: Error) => void }) => { unsubscribe: () => void } }).subscribe({
+          next: ({ data }: { data: { onCreateConfession: Confession } }) => {
+            if (data?.onCreateConfession) {
+              setConfessions(prev => [data.onCreateConfession, ...prev]);
+            }
+          },
+          error: (err: Error) => {
+            console.error('Subscription error:', err);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to set up subscription:', err);
+    }
+
+    return () => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
+  }, [fetchConfessions]);
 
   // Update timestamps every 30 seconds
   useEffect(() => {
@@ -68,6 +116,12 @@ export default function FeedPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Poll for updates every 10 seconds as backup
+  useEffect(() => {
+    const interval = setInterval(fetchConfessions, 10000);
+    return () => clearInterval(interval);
+  }, [fetchConfessions]);
 
   return (
     <div className="relative min-h-dvh w-full overflow-hidden bg-slate-950">
@@ -157,6 +211,23 @@ export default function FeedPage() {
           </Link>
         </motion.div>
 
+        {/* Error State */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-4 rounded-lg bg-red-500/20 border border-red-500/30 p-4 text-center"
+          >
+            <p className="text-red-400">{error}</p>
+            <button 
+              onClick={fetchConfessions}
+              className="mt-2 text-sm text-red-300 underline"
+            >
+              Try again
+            </button>
+          </motion.div>
+        )}
+
         {/* Loading State */}
         {isLoading && (
           <motion.div
@@ -170,7 +241,7 @@ export default function FeedPage() {
         )}
 
         {/* Empty State - No confessions yet */}
-        {!isLoading && confessions.length === 0 && (
+        {!isLoading && confessions.length === 0 && !error && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

@@ -1,0 +1,27 @@
+## Profanity filter for Hindi & English
+#set($message = $ctx.args.message.toLowerCase())
+#set($badWords = ["fuck", "shit", "ass", "bitch", "bastard", "dick", "cock", "pussy", "whore", "slut", "cunt", "damn", "crap", "bhenchod", "bhosdike", "madarchod", "chutiya", "gaand", "lauda", "lund", "bhadwa", "randi", "harami", "kamina", "bc", "mc", "bsdk", "चूतिया", "भोसडी", "मादरचोद", "गांड", "लौड़ा", "रंडी", "हरामी"])
+
+#set($hasBadWord = false)
+#foreach($word in $badWords)
+  #if($message.contains($word))
+    #set($hasBadWord = true)
+  #end
+#end
+
+#if($hasBadWord)
+  $util.error("अच्छा लिखो! 🙏 No bad words please.", "PROFANITY_DETECTED")
+#end
+
+{
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDBJson($util.autoId())
+  },
+  "attributeValues": {
+    "message": $util.dynamodb.toDynamoDBJson($ctx.args.message),
+    "createdAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601()),
+    "status": $util.dynamodb.toDynamoDBJson("approved")
+  }
+}

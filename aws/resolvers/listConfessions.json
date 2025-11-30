@@ -1,0 +1,4 @@
+{
+  "requestMappingTemplate": "{\n  \"version\": \"2018-05-29\",\n  \"operation\": \"Query\",\n  \"index\": \"status-createdAt-index\",\n  \"query\": {\n    \"expression\": \"#status = :status\",\n    \"expressionNames\": {\n      \"#status\": \"status\"\n    },\n    \"expressionValues\": {\n      \":status\": { \"S\": \"approved\" }\n    }\n  },\n  \"scanIndexForward\": false,\n  \"limit\": $util.defaultIfNull($ctx.args.limit, 50)\n}",
+  "responseMappingTemplate": "{\n  \"items\": $util.toJson($ctx.result.items),\n  \"nextToken\": $util.toJson($ctx.result.nextToken)\n}"
+}

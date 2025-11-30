@@ -4,6 +4,41 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
+import { Amplify } from "aws-amplify";
+import { generateClient } from "aws-amplify/api";
+import awsConfig from "@/aws-config";
+import { createConfession } from "@/graphql/operations";
+
+// Configure Amplify
+Amplify.configure({
+  API: {
+    GraphQL: {
+      endpoint: awsConfig.aws_appsync_graphqlEndpoint,
+      region: awsConfig.aws_appsync_region,
+      defaultAuthMode: 'apiKey',
+      apiKey: awsConfig.aws_appsync_apiKey,
+    }
+  }
+});
+
+const client = generateClient();
+
+// Profanity filter - Hindi & English bad words
+const BAD_WORDS = [
+  // English
+  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'whore', 
+  'slut', 'cunt', 'damn', 'crap', 'wtf', 'stfu', 'asshole', 'motherfucker',
+  // Hindi transliterated
+  'bhenchod', 'bhosdike', 'madarchod', 'chutiya', 'gaand', 'lauda', 'lund', 
+  'bhadwa', 'randi', 'harami', 'kamina', 'bc', 'mc', 'bsdk',
+  // Hindi script
+  'चूतिया', 'भोसडी', 'मादरचोद', 'गांड', 'लौड़ा', 'रंडी', 'हरामी', 'बहनचोद'
+];
+
+function containsBadWords(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  return BAD_WORDS.some(word => lowerText.includes(word.toLowerCase()));
+}
 
 export default function ConfessPage() {
   const [message, setMessage] = useState("");
@@ -16,22 +51,38 @@ export default function ConfessPage() {
 
     setIsSubmitting(true);
 
-    // Simulate moderation check - will be replaced with actual Lambda moderation
-    setTimeout(() => {
-      // Simulating moderation - in real implementation, this will call Lambda
-      const isBadWord = false; // Will be checked by Lambda + Comprehend
+    // Client-side profanity check first
+    if (containsBadWords(message)) {
+      setNotification({ type: "error", text: "अच्छा लिखो 🙏 No bad words please!" });
+      setIsSubmitting(false);
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
 
-      if (isBadWord) {
-        setNotification({ type: "error", text: "अच्छा लिखो 🙏" });
-        setIsSubmitting(false);
-      } else {
-        setMessage("");
-        setIsSubmitting(false);
-        setNotification({ type: "success", text: "Your confession has been shared 💜" });
-      }
+    try {
+      // Send to AppSync backend
+      await client.graphql({
+        query: createConfession,
+        variables: { message: message.trim() }
+      });
 
+      setMessage("");
+      setNotification({ type: "success", text: "Your confession has been shared! 💜" });
       setTimeout(() => setNotification(null), 3000);
-    }, 800);
+    } catch (error: unknown) {
+      console.error('Error creating confession:', error);
+      
+      // Check if it's a profanity error from backend
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('PROFANITY') || errorMessage.includes('अच्छा')) {
+        setNotification({ type: "error", text: "अच्छा लिखो 🙏 No bad words please!" });
+      } else {
+        setNotification({ type: "error", text: "Something went wrong. Try again!" });
+      }
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
