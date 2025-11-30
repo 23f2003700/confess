@@ -1,0 +1,12 @@
+{
+  "name": "profanity-filter-lambda",
+  "version": "1.0.0",
+  "description": "Profanity filter for confessions with Hindi & English support",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-comprehend": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0",
+    "uuid": "^9.0.0"
+  }
+}

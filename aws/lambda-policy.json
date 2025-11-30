@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-south-1:340663646697:table/ConfessionsTable",
+        "arn:aws:dynamodb:ap-south-1:340663646697:table/ConfessionsTable/index/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "comprehend:DetectSentiment",
+        "comprehend:DetectToxicContent",
+        "comprehend:DetectDominantLanguage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-south-1:340663646697:*"
+    }
+  ]
+}
