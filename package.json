@@ -9,9 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@aws-amplify/api": "^6.3.20",
     "@splinetool/react-spline": "^4.1.0",
-    "aws-amplify": "^6.15.8",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.24",
     "next": "16.0.5",
