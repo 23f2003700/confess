@@ -6,6 +6,8 @@ frontend:
         - npm ci
     build:
       commands:
+        - echo "APPSYNC_ENDPOINT=$APPSYNC_ENDPOINT" >> .env.production
+        - echo "APPSYNC_API_KEY=$APPSYNC_API_KEY" >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next
