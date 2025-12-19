@@ -64,40 +64,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to base64
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64 = buffer.toString('base64');
+    // Upload to catbox.moe (free, anonymous, no API key needed)
+    const catboxFormData = new FormData();
+    catboxFormData.append('reqtype', 'fileupload');
+    catboxFormData.append('fileToUpload', file, file.name);
 
-    // Upload to Imgur (anonymous upload, no API key needed for basic use)
-    const imgurFormData = new FormData();
-    imgurFormData.append('image', base64);
-    imgurFormData.append('type', 'base64');
-
-    const imgurResponse = await fetch('https://api.imgur.com/3/image', {
+    const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Client-ID 546c25a59c58ad7', // Public anonymous client ID
-      },
-      body: imgurFormData,
+      body: catboxFormData,
     });
 
-    const imgurData = await imgurResponse.json();
-
-    if (!imgurData.success) {
-      console.error('Imgur error:', imgurData);
+    if (!catboxResponse.ok) {
+      console.error('Catbox error:', catboxResponse.status);
       return NextResponse.json(
         { error: 'Failed to upload image' },
         { status: 500 }
       );
     }
 
-    // Return the public URL
-    const imageUrl = imgurData.data.link;
+    // Catbox returns the URL as plain text
+    const imageUrl = await catboxResponse.text();
+    
+    if (!imageUrl.startsWith('https://')) {
+      console.error('Catbox error response:', imageUrl);
+      return NextResponse.json(
+        { error: 'Failed to upload image' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      imageUrl,
+      imageUrl: imageUrl.trim(),
     });
   } catch (error) {
     console.error('Upload error:', error);
