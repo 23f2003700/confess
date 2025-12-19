@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
+import Image from "next/image";
 
 // No AWS credentials here - all handled server-side
 
 interface Confession {
   id: string;
   message: string;
+  imageUrl?: string | null;
   createdAt: string;
 }
 
@@ -25,6 +27,24 @@ function getTimeAgo(dateString: string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   return `${diffDays}d ago`;
+}
+
+// Download image function
+async function downloadImage(imageUrl: string, fileName: string) {
+  try {
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download failed:', error);
+  }
 }
 
 export default function FeedPage() {
@@ -265,6 +285,50 @@ export default function FeedPage() {
 
                   {/* Message Bubble - WhatsApp Style */}
                   <div className="relative max-w-[85%] rounded-2xl rounded-tl-sm border border-purple-500/10 bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-4 shadow-lg backdrop-blur-sm">
+                    {/* Image Content */}
+                    {confession.imageUrl && (
+                      <div className="mb-3 relative group/image">
+                        <div className="rounded-xl overflow-hidden border border-purple-500/20">
+                          <Image
+                            src={confession.imageUrl}
+                            alt="Confession image"
+                            width={400}
+                            height={300}
+                            className="w-full h-auto max-h-80 object-cover"
+                            unoptimized
+                          />
+                        </div>
+                        {/* Download Button */}
+                        <motion.button
+                          onClick={() => downloadImage(confession.imageUrl!, `confession-${confession.id}.jpg`)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          className="absolute bottom-2 right-2 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm 
+                                     text-white flex items-center justify-center shadow-lg
+                                     opacity-0 group-hover/image:opacity-100 transition-opacity duration-200
+                                     hover:bg-purple-600/80 border border-white/20"
+                          title="Download image"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </motion.button>
+                        {/* Mobile-visible download button */}
+                        <motion.button
+                          onClick={() => downloadImage(confession.imageUrl!, `confession-${confession.id}.jpg`)}
+                          whileTap={{ scale: 0.9 }}
+                          className="sm:hidden absolute bottom-2 right-2 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm 
+                                     text-white flex items-center justify-center shadow-lg
+                                     hover:bg-purple-600/80 border border-white/20"
+                          title="Download image"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </motion.button>
+                      </div>
+                    )}
+
                     {/* Message Content */}
                     <p className="text-gray-100 leading-relaxed text-[15px]">
                       {confession.message}

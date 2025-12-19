@@ -4,9 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // These are SERVER-SIDE ONLY - never sent to browser
-// Fallback values for when env vars aren't loaded (should be set in Amplify)
-const APPSYNC_ENDPOINT = process.env.APPSYNC_ENDPOINT || 'https://ul6plhg4uvcorc63rup2ufdd3y.appsync-api.ap-south-1.amazonaws.com/graphql';
-const APPSYNC_API_KEY = process.env.APPSYNC_API_KEY || 'da2-npfcho2b5zgo7k7jguzhegbf4u';
+// Must be set in environment variables (Amplify)
+const APPSYNC_ENDPOINT = process.env.APPSYNC_ENDPOINT!;
+const APPSYNC_API_KEY = process.env.APPSYNC_API_KEY!;
 
 // Rate limiting map (in production, use Redis)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -33,9 +33,24 @@ function isRateLimited(ip: string): boolean {
 // GET - Fetch confessions
 export async function GET() {
   try {
-    const query = `
+    // Try with imageUrl first, fallback to without if schema not updated
+    const queryWithImage = `
       query ListConfessions {
-        listConfessions(limit: 50) {
+        listConfessions(limit: 100) {
+          items {
+            id
+            message
+            imageUrl
+            createdAt
+          }
+          nextToken
+        }
+      }
+    `;
+    
+    const queryWithoutImage = `
+      query ListConfessions {
+        listConfessions(limit: 100) {
           items {
             id
             message
@@ -46,17 +61,31 @@ export async function GET() {
       }
     `;
 
-    const response = await fetch(APPSYNC_ENDPOINT, {
+    let response = await fetch(APPSYNC_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': APPSYNC_API_KEY,
       },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query: queryWithImage }),
       cache: 'no-store',
     });
 
-    const data = await response.json();
+    let data = await response.json();
+    
+    // If imageUrl field doesn't exist, retry without it
+    if (data.errors && data.errors[0]?.message?.includes('imageUrl')) {
+      response = await fetch(APPSYNC_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': APPSYNC_API_KEY,
+        },
+        body: JSON.stringify({ query: queryWithoutImage }),
+        cache: 'no-store',
+      });
+      data = await response.json();
+    }
     
     if (data.errors) {
       console.error('GraphQL errors:', data.errors);
@@ -65,9 +94,10 @@ export async function GET() {
 
     // Only return safe data - no internal fields
     const items = data.data?.listConfessions?.items || [];
-    const safeItems = items.map((item: { id: string; message: string; createdAt: string }) => ({
+    const safeItems = items.map((item: { id: string; message: string; imageUrl?: string; createdAt: string }) => ({
       id: item.id,
       message: item.message,
+      imageUrl: item.imageUrl || null,
       createdAt: item.createdAt,
     }));
 
@@ -131,8 +161,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send to AppSync
-    const mutation = `
+    // Get imageUrl from request body
+    const imageUrl = body.imageUrl || null;
+
+    // Send to AppSync - try with imageUrl first, fallback without
+    const mutationWithImage = `
+      mutation CreateConfession($message: String!, $imageUrl: String) {
+        createConfession(message: $message, imageUrl: $imageUrl) {
+          id
+          message
+          imageUrl
+          createdAt
+        }
+      }
+    `;
+    
+    const mutationWithoutImage = `
       mutation CreateConfession($message: String!) {
         createConfession(message: $message) {
           id
@@ -142,19 +186,35 @@ export async function POST(request: NextRequest) {
       }
     `;
 
-    const response = await fetch(APPSYNC_ENDPOINT, {
+    let response = await fetch(APPSYNC_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': APPSYNC_API_KEY,
       },
       body: JSON.stringify({
-        query: mutation,
-        variables: { message: trimmedMessage },
+        query: mutationWithImage,
+        variables: { message: trimmedMessage, imageUrl },
       }),
     });
 
-    const data = await response.json();
+    let data = await response.json();
+    
+    // If imageUrl field doesn't exist in schema, retry without it
+    if (data.errors && data.errors[0]?.message?.includes('imageUrl')) {
+      response = await fetch(APPSYNC_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': APPSYNC_API_KEY,
+        },
+        body: JSON.stringify({
+          query: mutationWithoutImage,
+          variables: { message: trimmedMessage },
+        }),
+      });
+      data = await response.json();
+    }
 
     if (data.errors) {
       // Check if it's profanity error from AppSync
@@ -176,6 +236,7 @@ export async function POST(request: NextRequest) {
       confession: {
         id: confession.id,
         message: confession.message,
+        imageUrl: confession.imageUrl || null,
         createdAt: confession.createdAt,
       },
     });

@@ -1,6 +1,7 @@
 type Confession {
   id: ID!
   message: String!
+  imageUrl: String
   createdAt: AWSDateTime!
   status: String!
 }
@@ -23,7 +24,7 @@ type Query {
 }
 
 type Mutation {
-  createConfession(message: String!): Confession
+  createConfession(message: String!, imageUrl: String): Confession
 }
 
 type Subscription {
