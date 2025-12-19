@@ -47,6 +47,60 @@ async function downloadImage(imageUrl: string, fileName: string) {
   }
 }
 
+// Image component with loading state and error handling
+function ConfessionImage({ src, alt }: { src: string; alt: string }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const handleLoad = () => {
+    setIsLoading(false);
+    setHasError(false);
+  };
+
+  const handleError = () => {
+    if (retryCount < 2) {
+      // Retry loading after a short delay
+      setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+      }, 1000);
+    } else {
+      setIsLoading(false);
+      setHasError(true);
+    }
+  };
+
+  if (hasError) {
+    return (
+      <div className="w-full h-48 bg-slate-800/50 rounded-xl flex items-center justify-center text-gray-500">
+        <span>📷 Image unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      {isLoading && (
+        <div className="absolute inset-0 bg-slate-800/50 rounded-xl flex items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+        </div>
+      )}
+      <Image
+        key={retryCount} // Force re-render on retry
+        src={src}
+        alt={alt}
+        width={400}
+        height={300}
+        className={`w-full h-auto max-h-80 object-cover transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+        unoptimized
+        onLoad={handleLoad}
+        onError={handleError}
+        loading="lazy"
+      />
+    </div>
+  );
+}
+
 export default function FeedPage() {
   const [confessions, setConfessions] = useState<Confession[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -289,13 +343,9 @@ export default function FeedPage() {
                     {confession.imageUrl && (
                       <div className="mb-3 relative group/image">
                         <div className="rounded-xl overflow-hidden border border-purple-500/20">
-                          <Image
+                          <ConfessionImage
                             src={confession.imageUrl}
                             alt="Confession image"
-                            width={400}
-                            height={300}
-                            className="w-full h-auto max-h-80 object-cover"
-                            unoptimized
                           />
                         </div>
                         {/* Download Button */}

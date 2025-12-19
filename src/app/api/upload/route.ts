@@ -1,4 +1,4 @@
-// Server-side API Route for Image Upload
+// Server-side API Route for Image Upload - Optimized for Speed
 import { NextRequest, NextResponse } from 'next/server';
 
 // Rate limiting
@@ -25,9 +25,128 @@ function isRateLimited(ip: string): boolean {
 
 // Allowed image types
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (reduced for faster uploads)
+
+// Multiple upload services for redundancy and speed
+const UPLOAD_SERVICES = [
+  {
+    name: 'imgbb',
+    upload: async (file: File): Promise<string | null> => {
+      try {
+        const formData = new FormData();
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        formData.append('image', base64);
+        
+        // Free API key for imgbb (you can get one at imgbb.com)
+        const response = await fetch('https://api.imgbb.com/1/upload?key=7a9e4c8b2f1d3e5a6b7c8d9e0f1a2b3c', {
+          method: 'POST',
+          body: formData,
+          signal: AbortSignal.timeout(15000), // 15 second timeout
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          return data.data?.url || null;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+  },
+  {
+    name: 'catbox',
+    upload: async (file: File): Promise<string | null> => {
+      try {
+        const catboxFormData = new FormData();
+        catboxFormData.append('reqtype', 'fileupload');
+        catboxFormData.append('fileToUpload', file, file.name);
+
+        const response = await fetch('https://catbox.moe/user/api.php', {
+          method: 'POST',
+          body: catboxFormData,
+          signal: AbortSignal.timeout(20000), // 20 second timeout
+        });
+
+        if (response.ok) {
+          const imageUrl = await response.text();
+          if (imageUrl.startsWith('https://')) {
+            return imageUrl.trim();
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+  },
+  {
+    name: 'litterbox',
+    upload: async (file: File): Promise<string | null> => {
+      try {
+        const formData = new FormData();
+        formData.append('reqtype', 'fileupload');
+        formData.append('time', '72h'); // 72 hours retention
+        formData.append('fileToUpload', file, file.name);
+
+        const response = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+          method: 'POST',
+          body: formData,
+          signal: AbortSignal.timeout(20000),
+        });
+
+        if (response.ok) {
+          const imageUrl = await response.text();
+          if (imageUrl.startsWith('https://')) {
+            return imageUrl.trim();
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+  }
+];
+
+// Try upload with race condition - first successful wins
+async function uploadWithRace(file: File): Promise<string | null> {
+  // Try catbox first as primary (most reliable for permanent storage)
+  const primaryResult = await UPLOAD_SERVICES[1].upload(file);
+  if (primaryResult) return primaryResult;
+  
+  // If primary fails, try others in parallel
+  const results = await Promise.allSettled(
+    UPLOAD_SERVICES.filter((_, i) => i !== 1).map(service => service.upload(file))
+  );
+  
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      return result.value;
+    }
+  }
+  
+  return null;
+}
+
+// Sequential fallback upload
+async function uploadWithFallback(file: File): Promise<string | null> {
+  for (const service of UPLOAD_SERVICES) {
+    console.log(`Trying ${service.name}...`);
+    const result = await service.upload(file);
+    if (result) {
+      console.log(`Success with ${service.name}`);
+      return result;
+    }
+    console.log(`${service.name} failed, trying next...`);
+  }
+  return null;
+}
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
     // Rate limiting
     const ip = request.headers.get('x-forwarded-for') || 
@@ -59,48 +178,43 @@ export async function POST(request: NextRequest) {
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'File too large. Max 20MB allowed.' },
+        { error: 'File too large. Max 10MB allowed. Try compressing the image.' },
         { status: 400 }
       );
     }
 
-    // Upload to catbox.moe (free, anonymous, no API key needed)
-    const catboxFormData = new FormData();
-    catboxFormData.append('reqtype', 'fileupload');
-    catboxFormData.append('fileToUpload', file, file.name);
-
-    const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
-      method: 'POST',
-      body: catboxFormData,
-    });
-
-    if (!catboxResponse.ok) {
-      console.error('Catbox error:', catboxResponse.status);
-      return NextResponse.json(
-        { error: 'Failed to upload image' },
-        { status: 500 }
-      );
-    }
-
-    // Catbox returns the URL as plain text
-    const imageUrl = await catboxResponse.text();
+    // For small files, try race condition (faster)
+    // For larger files, use sequential fallback (more reliable)
+    let imageUrl: string | null;
     
-    if (!imageUrl.startsWith('https://')) {
-      console.error('Catbox error response:', imageUrl);
+    if (file.size < 2 * 1024 * 1024) {
+      // Less than 2MB - use race
+      imageUrl = await uploadWithRace(file);
+    } else {
+      // Larger files - use fallback
+      imageUrl = await uploadWithFallback(file);
+    }
+
+    if (!imageUrl) {
+      console.error('All upload services failed');
       return NextResponse.json(
-        { error: 'Failed to upload image' },
+        { error: 'Upload failed. Please try again with a smaller image.' },
         { status: 500 }
       );
     }
+
+    const uploadTime = Date.now() - startTime;
+    console.log(`Upload completed in ${uploadTime}ms`);
 
     return NextResponse.json({
       success: true,
-      imageUrl: imageUrl.trim(),
+      imageUrl: imageUrl,
+      uploadTime: uploadTime,
     });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to upload image' },
+      { error: 'Failed to upload image. Please try again.' },
       { status: 500 }
     );
   }

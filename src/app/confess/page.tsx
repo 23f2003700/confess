@@ -1,12 +1,70 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LightRays from "@/components/LightRays";
 import Image from "next/image";
 
 // No AWS credentials or sensitive data here - all handled server-side
+
+// Image compression utility - compresses images before upload for faster transfers
+async function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promise<File> {
+  return new Promise((resolve, reject) => {
+    // If file is already small enough, don't compress
+    if (file.size < 500 * 1024) { // Less than 500KB
+      resolve(file);
+      return;
+    }
+
+    const img = document.createElement('img');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    img.onload = () => {
+      // Calculate new dimensions maintaining aspect ratio
+      let { width, height } = img;
+      
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      // Draw and compress
+      ctx?.drawImage(img, 0, 0, width, height);
+      
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            // Create new file with compressed data
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            
+            // Only use compressed if it's actually smaller
+            if (compressedFile.size < file.size) {
+              console.log(`Compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressedFile.size / 1024).toFixed(0)}KB`);
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          } else {
+            resolve(file); // Fallback to original
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image for compression'));
+    img.src = URL.createObjectURL(file);
+  });
+}
 
 export default function ConfessPage() {
   const [message, setMessage] = useState("");
@@ -15,6 +73,7 @@ export default function ConfessPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -29,19 +88,24 @@ export default function ConfessPage() {
         return;
       }
       
-      // Validate file size (20MB max)
-      if (file.size > 20 * 1024 * 1024) {
-        setNotification({ type: "error", text: "Image too large! Max 20MB allowed." });
+      // Validate file size (10MB max - will be compressed before upload)
+      if (file.size > 10 * 1024 * 1024) {
+        setNotification({ type: "error", text: "Image too large! Max 10MB allowed." });
         setTimeout(() => setNotification(null), 3000);
         return;
       }
       
       setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      
+      // Create preview using URL.createObjectURL (faster than FileReader)
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+      
+      // Show file size info
+      const sizeKB = (file.size / 1024).toFixed(0);
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      const sizeStr = file.size > 1024 * 1024 ? `${sizeMB}MB` : `${sizeKB}KB`;
+      console.log(`Selected image: ${file.name} (${sizeStr})`);
     }
   };
 
@@ -52,18 +116,32 @@ export default function ConfessPage() {
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
-  const uploadImage = async (): Promise<string | null> => {
+  const uploadImage = useCallback(async (retryCount = 0): Promise<string | null> => {
     if (!selectedImage) return null;
     
+    const MAX_RETRIES = 2;
     setIsUploading(true);
+    
     try {
+      // Compress image first for faster upload
+      setUploadProgress("Compressing...");
+      const imageToUpload = await compressImage(selectedImage);
+      
+      setUploadProgress("Uploading...");
       const formData = new FormData();
-      formData.append('image', selectedImage);
+      formData.append('image', imageToUpload);
+      
+      // Use AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
       
       const data = await response.json();
       
@@ -71,14 +149,26 @@ export default function ConfessPage() {
         throw new Error(data.error || 'Upload failed');
       }
       
+      setUploadProgress("");
       return data.imageUrl;
     } catch (error) {
       console.error('Upload error:', error);
+      
+      // Retry logic
+      if (retryCount < MAX_RETRIES) {
+        setUploadProgress(`Retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        return uploadImage(retryCount + 1);
+      }
+      
+      setUploadProgress("");
       throw error;
     } finally {
-      setIsUploading(false);
+      if (retryCount === 0 || retryCount >= MAX_RETRIES) {
+        setIsUploading(false);
+      }
     }
-  };
+  }, [selectedImage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,7 +385,7 @@ export default function ConfessPage() {
                   {isSubmitting ? (
                     <span className="flex items-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      {isUploading ? "Uploading..." : "Sending..."}
+                      {uploadProgress || (isUploading ? "Uploading..." : "Sending...")}
                     </span>
                   ) : (
                     "Confess 💜"

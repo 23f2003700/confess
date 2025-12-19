@@ -17,6 +17,21 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'litter.catbox.moe',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.ibb.co',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.ibb.co',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
         hostname: '*.s3.ap-south-1.amazonaws.com',
         pathname: '/**',
       },
@@ -26,6 +41,9 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
     ],
+    // Minimize image processing overhead for external images
+    minimumCacheTTL: 86400, // Cache for 24 hours
+    dangerouslyAllowSVG: false,
   },
 };
 
