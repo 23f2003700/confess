@@ -1,24 +1,9 @@
-// Server-side API Route for Image Upload - Credentials NEVER exposed to client
+// Server-side API Route for Image Upload
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { v4 as uuidv4 } from 'uuid';
-
-// S3 Configuration - SERVER-SIDE ONLY
-const S3_BUCKET = process.env.S3_BUCKET || 'mymbm-confessions-images';
-const S3_REGION = process.env.AWS_REGION || 'ap-south-1';
-
-// Initialize S3 Client (uses IAM role in production, or env vars locally)
-const s3Client = new S3Client({
-  region: S3_REGION,
-  credentials: process.env.AWS_ACCESS_KEY_ID ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  } : undefined, // Use IAM role in Amplify
-});
 
 // Rate limiting
 const uploadRateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const UPLOAD_RATE_LIMIT = 5; // 5 uploads per minute
+const UPLOAD_RATE_LIMIT = 10; // 10 uploads per minute
 const RATE_WINDOW = 60 * 1000;
 
 function isRateLimited(ip: string): boolean {
@@ -79,28 +64,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique filename
-    const fileExtension = file.name.split('.').pop() || 'jpg';
-    const fileName = `confessions/${uuidv4()}.${fileExtension}`;
-
-    // Convert file to buffer
+    // Convert file to base64
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    const base64 = buffer.toString('base64');
 
-    // Upload to S3
-    const uploadCommand = new PutObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: fileName,
-      Body: buffer,
-      ContentType: file.type,
-      // Make publicly readable
-      ACL: 'public-read',
+    // Upload to Imgur (anonymous upload, no API key needed for basic use)
+    const imgurFormData = new FormData();
+    imgurFormData.append('image', base64);
+    imgurFormData.append('type', 'base64');
+
+    const imgurResponse = await fetch('https://api.imgur.com/3/image', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Client-ID 546c25a59c58ad7', // Public anonymous client ID
+      },
+      body: imgurFormData,
     });
 
-    await s3Client.send(uploadCommand);
+    const imgurData = await imgurResponse.json();
+
+    if (!imgurData.success) {
+      console.error('Imgur error:', imgurData);
+      return NextResponse.json(
+        { error: 'Failed to upload image' },
+        { status: 500 }
+      );
+    }
 
     // Return the public URL
-    const imageUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${fileName}`;
+    const imageUrl = imgurData.data.link;
 
     return NextResponse.json({
       success: true,

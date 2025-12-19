@@ -29,9 +29,9 @@ export default function ConfessPage() {
         return;
       }
       
-      // Validate file size (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        setNotification({ type: "error", text: "Image too large! Max 5MB allowed." });
+      // Validate file size (20MB max)
+      if (file.size > 20 * 1024 * 1024) {
+        setNotification({ type: "error", text: "Image too large! Max 20MB allowed." });
         setTimeout(() => setNotification(null), 3000);
         return;
       }
